@@ -6,12 +6,13 @@ if (!isProduction) {
 
 const InventorySyncService = require('./services/inventorySync');
 const ProductEnrichmentService = require('./services/productEnrichment');
+const DiscountSyncService = require('./services/discountSync');
 const StoreConfigService = require('./services/storeConfig');
 
 const SYNC_INTERVAL_MINUTES = parseInt(process.env.SYNC_INTERVAL_MINUTES, 10) || 10;
 const SYNC_INTERVAL_MS = SYNC_INTERVAL_MINUTES * 60 * 1000;
 
-async function syncAllLocations(inventoryServices, enrichmentServices) {
+async function syncAllLocations(inventoryServices, enrichmentServices, discountServices) {
   console.log(`\n=== Starting sync for ${inventoryServices.length} location(s) ===`);
   const startTime = Date.now();
 
@@ -44,10 +45,23 @@ async function syncAllLocations(inventoryServices, enrichmentServices) {
     }
   }
 
-  const duration = ((Date.now() - startTime) / 1000 / 60).toFixed(1);
-  console.log(`\n=== Sync complete: ${totalSynced} synced, ${totalEnriched} enriched, ${totalErrors} errors (${duration} min) ===\n`);
+  // Phase 3: Discount sync from POS API
+  console.log('\n--- Phase 3: Discount Sync (POS API) ---');
+  let totalDiscounts = 0;
 
-  return { totalSynced, totalEnriched, totalErrors, duration };
+  for (const service of discountServices) {
+    try {
+      const result = await service.syncDiscounts();
+      totalDiscounts += result.synced || 0;
+    } catch (error) {
+      console.error(`Discount sync failed:`, error.message);
+    }
+  }
+
+  const duration = ((Date.now() - startTime) / 1000 / 60).toFixed(1);
+  console.log(`\n=== Sync complete: ${totalSynced} inventory, ${totalEnriched} enriched, ${totalDiscounts} discounts, ${totalErrors} errors (${duration} min) ===\n`);
+
+  return { totalSynced, totalEnriched, totalDiscounts, totalErrors, duration };
 }
 
 async function main() {
@@ -85,10 +99,14 @@ async function main() {
     loc => new ProductEnrichmentService(loc.id, loc.name)
   );
 
+  const discountServices = locationConfigs.map(
+    loc => new DiscountSyncService(loc.id, loc.name, loc.apiKey)
+  );
+
   // Run initial sync
   console.log('\n');
   try {
-    await syncAllLocations(inventoryServices, enrichmentServices);
+    await syncAllLocations(inventoryServices, enrichmentServices, discountServices);
   } catch (error) {
     console.error('Initial sync failed:', error.message);
   }
@@ -96,7 +114,7 @@ async function main() {
   // Schedule recurring syncs
   setInterval(async () => {
     try {
-      await syncAllLocations(inventoryServices, enrichmentServices);
+      await syncAllLocations(inventoryServices, enrichmentServices, discountServices);
     } catch (error) {
       console.error('Scheduled sync failed:', error.message);
     }

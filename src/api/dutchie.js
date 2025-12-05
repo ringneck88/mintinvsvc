@@ -40,6 +40,30 @@ class DutchieClient {
       throw error;
     }
   }
+
+  async getDiscountsReport() {
+    try {
+      console.log('Fetching discounts report from Dutchie...');
+
+      const response = await this.client.get('/reporting/discounts');
+
+      console.log(`Fetched ${response.data?.length || 0} discounts`);
+      return response.data;
+    } catch (error) {
+      if (error.response) {
+        console.error('Dutchie API Error:', {
+          status: error.response.status,
+          statusText: error.response.statusText,
+          data: error.response.data
+        });
+      } else if (error.request) {
+        console.error('No response from Dutchie API:', error.message);
+      } else {
+        console.error('Error setting up request:', error.message);
+      }
+      throw error;
+    }
+  }
 }
 
 module.exports = DutchieClient;
