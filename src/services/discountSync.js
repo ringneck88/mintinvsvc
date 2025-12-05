@@ -124,8 +124,16 @@ class DiscountSyncService {
       let synced = 0;
       let errors = 0;
 
+      let skipped = 0;
+
       for (const item of discountsData) {
         try {
+          // Skip discounts without products
+          if (item.products === null || item.products === undefined) {
+            skipped++;
+            continue;
+          }
+
           const transformed = this.transformItem(item);
 
           if (!transformed.id) {
@@ -144,9 +152,9 @@ class DiscountSyncService {
       }
 
       const duration = ((Date.now() - startTime) / 1000).toFixed(2);
-      console.log(`  Discount sync complete in ${duration}s: ${synced} synced, ${errors} errors`);
+      console.log(`  Discount sync complete in ${duration}s: ${synced} synced, ${skipped} skipped (no products), ${errors} errors`);
 
-      return { synced, errors, duration, locationId: this.locationId };
+      return { synced, skipped, errors, duration, locationId: this.locationId };
     } catch (error) {
       console.error(`  Discount sync failed for ${this.locationName}:`, error.message);
       return { synced: 0, errors: 1, locationId: this.locationId };
