@@ -14,8 +14,9 @@ const { startServer } = require('./api/server');
 
 const SYNC_INTERVAL_MINUTES = parseInt(process.env.SYNC_INTERVAL_MINUTES, 10) || 10;
 const SYNC_INTERVAL_MS = SYNC_INTERVAL_MINUTES * 60 * 1000;
+const BANNER_SYNC_HOUR = 5; // 5 AM daily
 
-async function syncAllLocations(inventoryServices, enrichmentServices, discountServices, bannerServices, cacheSyncService, locationConfigs) {
+async function syncAllLocations(inventoryServices, enrichmentServices, discountServices, cacheSyncService, locationConfigs) {
   console.log(`\n=== Starting sync for ${inventoryServices.length} location(s) ===`);
   const startTime = Date.now();
 
@@ -48,8 +49,37 @@ async function syncAllLocations(inventoryServices, enrichmentServices, discountS
     }
   }
 
-  // Phase 3: Banner sync from Plus GraphQL API
-  console.log('\n--- Phase 3: Banner Sync (Plus API) ---');
+  // Phase 3: Discount sync from POS API
+  console.log('\n--- Phase 3: Discount Sync (POS API) ---');
+  let totalDiscounts = 0;
+
+  for (const service of discountServices) {
+    try {
+      const result = await service.syncDiscounts();
+      totalDiscounts += result.synced || 0;
+    } catch (error) {
+      console.error(`Discount sync failed:`, error.message);
+    }
+  }
+
+  // Phase 4: Refresh Redis cache
+  let totalCached = 0;
+  try {
+    const cacheResult = await cacheSyncService.refreshAllCaches(locationConfigs);
+    totalCached = cacheResult.totalInventory || 0;
+  } catch (error) {
+    console.error(`Cache refresh failed:`, error.message);
+  }
+
+  const duration = ((Date.now() - startTime) / 1000 / 60).toFixed(1);
+  console.log(`\n=== Sync complete: ${totalSynced} inventory, ${totalEnriched} enriched, ${totalDiscounts} discounts, ${totalCached} cached, ${totalErrors} errors (${duration} min) ===\n`);
+
+  return { totalSynced, totalEnriched, totalDiscounts, totalCached, totalErrors, duration };
+}
+
+async function syncBanners(bannerServices) {
+  console.log('\n=== Starting daily banner sync ===');
+  const startTime = Date.now();
   let totalBanners = 0;
 
   for (const service of bannerServices) {
@@ -63,32 +93,28 @@ async function syncAllLocations(inventoryServices, enrichmentServices, discountS
     }
   }
 
-  // Phase 4: Discount sync from POS API
-  console.log('\n--- Phase 4: Discount Sync (POS API) ---');
-  let totalDiscounts = 0;
+  const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+  console.log(`=== Banner sync complete: ${totalBanners} banners updated (${duration}s) ===\n`);
 
-  for (const service of discountServices) {
-    try {
-      const result = await service.syncDiscounts();
-      totalDiscounts += result.synced || 0;
-    } catch (error) {
-      console.error(`Discount sync failed:`, error.message);
+  return { totalBanners, duration };
+}
+
+function scheduleDailyBannerSync(bannerServices) {
+  const checkAndRunBannerSync = async () => {
+    const now = new Date();
+    const hours = now.getHours();
+    const minutes = now.getMinutes();
+
+    // Run at 5:00 AM (within the first minute of the hour)
+    if (hours === BANNER_SYNC_HOUR && minutes === 0) {
+      console.log(`\n[${now.toISOString()}] Running scheduled daily banner sync...`);
+      await syncBanners(bannerServices);
     }
-  }
+  };
 
-  // Phase 5: Refresh Redis cache
-  let totalCached = 0;
-  try {
-    const cacheResult = await cacheSyncService.refreshAllCaches(locationConfigs);
-    totalCached = cacheResult.totalInventory || 0;
-  } catch (error) {
-    console.error(`Cache refresh failed:`, error.message);
-  }
-
-  const duration = ((Date.now() - startTime) / 1000 / 60).toFixed(1);
-  console.log(`\n=== Sync complete: ${totalSynced} inventory, ${totalEnriched} enriched, ${totalBanners} banners, ${totalDiscounts} discounts, ${totalCached} cached, ${totalErrors} errors (${duration} min) ===\n`);
-
-  return { totalSynced, totalEnriched, totalBanners, totalDiscounts, totalCached, totalErrors, duration };
+  // Check every minute
+  setInterval(checkAndRunBannerSync, 60 * 1000);
+  console.log(`Banner sync scheduled daily at ${BANNER_SYNC_HOUR}:00 AM`);
 }
 
 async function main() {
@@ -131,7 +157,7 @@ async function main() {
   );
 
   const bannerServices = locationConfigs.map(
-    loc => new BannerSyncService(loc.id, loc.name, loc.storeId)
+    loc => new BannerSyncService(loc.id, loc.name, loc.storeDocumentId)
   );
 
   const cacheSyncService = new CacheSyncService();
@@ -142,19 +168,29 @@ async function main() {
   // Run initial sync
   console.log('\n');
   try {
-    await syncAllLocations(inventoryServices, enrichmentServices, discountServices, bannerServices, cacheSyncService, locationConfigs);
+    await syncAllLocations(inventoryServices, enrichmentServices, discountServices, cacheSyncService, locationConfigs);
   } catch (error) {
     console.error('Initial sync failed:', error.message);
   }
 
-  // Schedule recurring syncs
+  // Run initial banner sync on startup
+  try {
+    await syncBanners(bannerServices);
+  } catch (error) {
+    console.error('Initial banner sync failed:', error.message);
+  }
+
+  // Schedule recurring inventory/discount syncs
   setInterval(async () => {
     try {
-      await syncAllLocations(inventoryServices, enrichmentServices, discountServices, bannerServices, cacheSyncService, locationConfigs);
+      await syncAllLocations(inventoryServices, enrichmentServices, discountServices, cacheSyncService, locationConfigs);
     } catch (error) {
       console.error('Scheduled sync failed:', error.message);
     }
   }, SYNC_INTERVAL_MS);
+
+  // Schedule daily banner sync at 5 AM
+  scheduleDailyBannerSync(bannerServices);
 
   console.log('Service running. Press Ctrl+C to stop.');
 }

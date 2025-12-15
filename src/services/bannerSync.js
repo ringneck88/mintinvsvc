@@ -4,11 +4,25 @@ const DutchiePlusClient = require('../api/dutchiePlus');
 const STORES_API_URL = process.env.STORES_API_URL || 'https://mintdealsbackend-production.up.railway.app/api/stores';
 const STRAPI_API_TOKEN = process.env.STRAPI_API_TOKEN;
 
+function stripHtml(html) {
+  if (!html) return null;
+  return html
+    .replace(/<[^>]*>/g, '')  // Remove HTML tags
+    .replace(/&nbsp;/g, ' ')   // Replace &nbsp; with space
+    .replace(/&amp;/g, '&')    // Replace &amp; with &
+    .replace(/&lt;/g, '<')     // Replace &lt; with <
+    .replace(/&gt;/g, '>')     // Replace &gt; with >
+    .replace(/&quot;/g, '"')   // Replace &quot; with "
+    .replace(/&#39;/g, "'")    // Replace &#39; with '
+    .replace(/\s+/g, ' ')      // Collapse multiple spaces
+    .trim();
+}
+
 class BannerSyncService {
-  constructor(locationId, locationName, storeId) {
+  constructor(locationId, locationName, storeDocumentId) {
     this.locationId = locationId;  // DutchieStoreID (retailerId for GraphQL)
     this.locationName = locationName;
-    this.storeId = storeId;  // Strapi store ID for PUT request
+    this.storeDocumentId = storeDocumentId;  // Strapi documentId for PUT request
     this.plusClient = new DutchiePlusClient();
   }
 
@@ -26,8 +40,8 @@ class BannerSyncService {
       return { updated: false, skipped: true };
     }
 
-    if (!this.storeId) {
-      console.log(`  Skipping ${this.locationName} - no store ID configured`);
+    if (!this.storeDocumentId) {
+      console.log(`  Skipping ${this.locationName} - no store documentId configured`);
       return { updated: false, skipped: true };
     }
 
@@ -38,11 +52,12 @@ class BannerSyncService {
 
     try {
       const bannerHtml = await this.plusClient.getRetailerBanner(this.locationId);
+      const bannerText = stripHtml(bannerHtml);
 
       // Update the store's tickertape field in Strapi
-      const response = await axios.put(`${STORES_API_URL}/${this.storeId}`, {
+      const response = await axios.put(`${STORES_API_URL}/${this.storeDocumentId}`, {
         data: {
-          tickertape: bannerHtml
+          tickertape: bannerText
         }
       }, {
         headers: {
@@ -54,8 +69,8 @@ class BannerSyncService {
       const duration = ((Date.now() - startTime) / 1000).toFixed(2);
 
       if (response.status === 200) {
-        console.log(`  Banner sync complete in ${duration}s: tickertape ${bannerHtml ? 'updated' : 'cleared'}`);
-        return { updated: true, hasContent: !!bannerHtml, duration, locationId: this.locationId };
+        console.log(`  Banner sync complete in ${duration}s: tickertape ${bannerText ? 'updated' : 'cleared'}`);
+        return { updated: true, hasContent: !!bannerText, duration, locationId: this.locationId };
       } else {
         console.log(`  Banner sync complete in ${duration}s: unexpected status ${response.status}`);
         return { updated: false, duration, locationId: this.locationId };

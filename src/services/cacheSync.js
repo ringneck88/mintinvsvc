@@ -42,7 +42,7 @@ class CacheSyncService {
 
   // Refresh cache for all locations
   async refreshAllCaches(locationConfigs) {
-    console.log('\n--- Phase 5: Refreshing Redis Cache ---');
+    console.log('\n--- Phase 4: Refreshing Redis Cache ---');
     const startTime = Date.now();
 
     let totalInventory = 0;

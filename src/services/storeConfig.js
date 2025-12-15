@@ -67,6 +67,7 @@ class StoreConfigService {
         city: dutchieInfo.city,
         state: dutchieInfo.state,
         storeId: store.id,
+        storeDocumentId: store.documentId || store.id, // Strapi v5 uses documentId
         slug: store.slug,
         tickertape: store.tickertape || null
       });
