@@ -48,26 +48,14 @@ class CacheSyncService {
     let totalInventory = 0;
     let totalDiscounts = 0;
 
-    // Fetch tickertape data from database for all locations
-    const locationIds = locationConfigs.map(loc => loc.id);
-    const tickertapeResult = await db.query(`
-      SELECT id, tickertape FROM locations WHERE id = ANY($1)
-    `, [locationIds]);
-
-    // Create a map of location id to tickertape
-    const tickertapeMap = {};
-    for (const row of tickertapeResult.rows) {
-      tickertapeMap[row.id] = row.tickertape;
-    }
-
-    // Cache locations list with tickertape
+    // Cache locations list with tickertape from store configs
     const locationsData = locationConfigs.map(loc => ({
       id: loc.id,
       name: loc.name,
       city: loc.city,
       state: loc.state,
       slug: loc.slug,
-      tickertape: tickertapeMap[loc.id] || null
+      tickertape: loc.tickertape || null
     }));
     await cache.cacheLocations(locationsData);
 

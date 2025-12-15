@@ -131,7 +131,7 @@ async function main() {
   );
 
   const bannerServices = locationConfigs.map(
-    loc => new BannerSyncService(loc.id, loc.name)
+    loc => new BannerSyncService(loc.id, loc.name, loc.storeId)
   );
 
   const cacheSyncService = new CacheSyncService();

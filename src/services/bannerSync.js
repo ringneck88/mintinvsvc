@@ -1,10 +1,13 @@
-const db = require('../db');
+const axios = require('axios');
 const DutchiePlusClient = require('../api/dutchiePlus');
 
+const STORES_API_URL = process.env.STORES_API_URL || 'https://mintdealsbackend-production.up.railway.app/api/stores';
+
 class BannerSyncService {
-  constructor(locationId, locationName) {
-    this.locationId = locationId;
+  constructor(locationId, locationName, storeId) {
+    this.locationId = locationId;  // DutchieStoreID (retailerId for GraphQL)
     this.locationName = locationName;
+    this.storeId = storeId;  // Strapi store ID for PUT request
     this.plusClient = new DutchiePlusClient();
   }
 
@@ -22,23 +25,28 @@ class BannerSyncService {
       return { updated: false, skipped: true };
     }
 
+    if (!this.storeId) {
+      console.log(`  Skipping ${this.locationName} - no store ID configured`);
+      return { updated: false, skipped: true };
+    }
+
     try {
       const bannerHtml = await this.plusClient.getRetailerBanner(this.locationId);
 
-      // Update the location's tickertape field
-      const result = await db.query(`
-        UPDATE locations SET
-          tickertape = $1
-        WHERE id = $2
-      `, [bannerHtml, this.locationId]);
+      // Update the store's tickertape field in Strapi
+      const response = await axios.put(`${STORES_API_URL}/${this.storeId}`, {
+        data: {
+          tickertape: bannerHtml
+        }
+      });
 
       const duration = ((Date.now() - startTime) / 1000).toFixed(2);
 
-      if (result.rowCount > 0) {
+      if (response.status === 200) {
         console.log(`  Banner sync complete in ${duration}s: tickertape ${bannerHtml ? 'updated' : 'cleared'}`);
         return { updated: true, hasContent: !!bannerHtml, duration, locationId: this.locationId };
       } else {
-        console.log(`  Banner sync complete in ${duration}s: location not found`);
+        console.log(`  Banner sync complete in ${duration}s: unexpected status ${response.status}`);
         return { updated: false, duration, locationId: this.locationId };
       }
     } catch (error) {

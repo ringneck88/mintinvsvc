@@ -67,7 +67,8 @@ class StoreConfigService {
         city: dutchieInfo.city,
         state: dutchieInfo.state,
         storeId: store.id,
-        slug: store.slug
+        slug: store.slug,
+        tickertape: store.tickertape || null
       });
 
       console.log(`  ✓ ${store.name} -> ${store.DutchieStoreID}`);
