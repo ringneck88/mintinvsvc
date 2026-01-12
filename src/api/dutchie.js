@@ -64,6 +64,39 @@ class DutchieClient {
       throw error;
     }
   }
+
+  /**
+   * Get discounts using v2 API with full restriction/eligibility data
+   * This endpoint provides calculationMethod, thresholdMin, and product restrictions
+   */
+  async getDiscountsV2() {
+    try {
+      console.log('Fetching discounts from Dutchie v2 API...');
+
+      const response = await this.client.get('/discounts/v2/list', {
+        params: {
+          includeInactive: false,
+          includeInclusionExclusionData: true
+        }
+      });
+
+      console.log(`Fetched ${response.data?.length || 0} discounts from v2 API`);
+      return response.data;
+    } catch (error) {
+      if (error.response) {
+        console.error('Dutchie v2 API Error:', {
+          status: error.response.status,
+          statusText: error.response.statusText,
+          data: error.response.data
+        });
+      } else if (error.request) {
+        console.error('No response from Dutchie v2 API:', error.message);
+      } else {
+        console.error('Error setting up request:', error.message);
+      }
+      throw error;
+    }
+  }
 }
 
 module.exports = DutchieClient;
